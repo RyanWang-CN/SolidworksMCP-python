@@ -662,7 +662,7 @@ def _add_fillet_impl(
             Exception: If any edge selection fails or the feature is ``None``.
         """
         if edge_names:
-            # Try selection via entity names (Edge<1>, etc.)
+            # Try named edge selection via SelectByID
             for edge_name in edge_names:
                 selected = adapter._attempt(
                     lambda en=edge_name: (
@@ -674,18 +674,44 @@ def _add_fillet_impl(
                 )
                 if not selected:
                     raise Exception(f"Failed to select edge: {edge_name}")
+        else:
+            # Auto-select first edge: pick a face, enumerate its edges, select one
+            face_selected = adapter._attempt(
+                lambda: (
+                    adapter.currentModel.ClearSelection2(True),
+                    getattr(adapter.currentModel, "SelectByID", lambda *a: False)(
+                        "", "FACE", 0, 0, 0
+                    ),
+                ),
+                default=None,
+            )
+            if face_selected:
+                sel_mgr = getattr(adapter.currentModel, "SelectionManager", None)
+                face_obj = adapter._attempt(
+                    lambda: sel_mgr.GetSelectedObject6(1, -1) if sel_mgr else None,
+                    default=None,
+                )
+                edges_raw = adapter._attempt(
+                    lambda: getattr(face_obj, "GetEdges", None) if face_obj else None,
+                    default=None,
+                )
+                if isinstance(edges_raw, (list, tuple)) and len(edges_raw) > 0:
+                    first_edge = edges_raw[0]
+                    adapter._attempt(
+                        lambda e=first_edge: (
+                            adapter.currentModel.ClearSelection2(True),
+                            getattr(e, "_FlagAsMethod", lambda x: None)("Select"),
+                            getattr(e, "Select", lambda x: False)(True),
+                        ),
+                        default=None,
+                    )
 
-        # IModelDoc2.FeatureFillet3 (9 params, SW2010+):
-        # R1(m), Propagate(bool), Ftyp(int), VarRadTyp(int), OverflowType(int),
-        # NRadii(int), Radii(array|None), UseHelpPoint(bool), UseTangentHoldLine(bool)
+        # IModelDoc2.FeatureFillet3: R1(m), Propagate, Ftyp, VarRadTyp, OverflowType,
+        #   NRadii, Radii, UseHelpPoint, UseTangentHoldLine
+        # Propagate=True, Ftyp=1 (constant radius)
         feature = adapter._attempt(
             lambda: adapter.currentModel.FeatureFillet3(
-                radius / 1000.0,
-                False,
-                1 if edge_names else 0,   # constant radius or simple (all edges)
-                0, 0,
-                0, None,
-                False, False,
+                radius / 1000.0, True, 1, 0, 0, 0, None, False, False
             ),
             default=None,
         )
@@ -693,20 +719,10 @@ def _add_fillet_impl(
         if feature is None:
             raise Exception("Failed to create fillet")
 
-        # IModelDoc2.FeatureFillet3 returns int (not IFeature) — treat as success
-        if isinstance(feature, int):
-            return SolidWorksFeature(
-                name=f"Fillet-R{radius}",
-                type="Fillet",
-                id=f"fillet_{radius}",
-                parameters={"radius": radius, "edges": edge_names},
-                properties={"created": datetime.now().isoformat()},
-            )
-
         return SolidWorksFeature(
-            name=feature.Name,
+            name=f"Fillet-R{radius}",
             type="Fillet",
-            id=adapter._get_feature_id(feature),
+            id=f"fillet_{radius}",
             parameters={"radius": radius, "edges": edge_names},
             properties={"created": datetime.now().isoformat()},
         )

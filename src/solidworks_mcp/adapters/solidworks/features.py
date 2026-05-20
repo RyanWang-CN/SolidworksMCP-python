@@ -671,41 +671,36 @@ def _add_fillet_impl(
         Raises:
             Exception: If any edge selection fails or the feature is ``None``.
         """
-        for edge_name in edge_names:
-            selected = adapter.currentModel.Extension.SelectByID2(
-                edge_name,
-                "EDGE",
-                0,
-                0,
-                0,
-                True,
-                0,
-                None,
-                0,
-            )
-            if not selected:
-                raise Exception(f"Failed to select edge: {edge_name}")
+        if edge_names:
+            # Try selection via entity names (Edge<1>, etc.)
+            for edge_name in edge_names:
+                selected = adapter._attempt(
+                    lambda en=edge_name: (
+                        adapter.currentModel.Extension.SelectByID2(
+                            en, "EDGE", 0, 0, 0, True, 0, None, 0
+                        )
+                    ),
+                    default=False,
+                )
+                if not selected:
+                    raise Exception(f"Failed to select edge: {edge_name}")
 
-        feature_manager = adapter.currentModel.FeatureManager
-        feature = feature_manager.FeatureFillet3(
-            radius / 1000.0,
-            0,
-            0,
-            0,
-            0,
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
-            0,
-            False,
+        # IModelDoc2.FeatureFillet3 (9 params, SW2010+):
+        # R1(m), Propagate(bool), Ftyp(int), VarRadTyp(int), OverflowType(int),
+        # NRadii(int), Radii(array|None), UseHelpPoint(bool), UseTangentHoldLine(bool)
+        feature = adapter._attempt(
+            lambda: adapter.currentModel.FeatureFillet3(
+                radius / 1000.0,
+                False,
+                1 if edge_names else 0,   # constant radius or simple (all edges)
+                0, 0,
+                0, None,
+                False, False,
+            ),
+            default=None,
         )
 
-        if not feature:
+        if feature is None:
             raise Exception("Failed to create fillet")
 
         return SolidWorksFeature(

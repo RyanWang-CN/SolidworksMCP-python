@@ -325,28 +325,18 @@ def _create_revolve_impl(
         Raises:
             Exception: If ``FeatureRevolve2`` returns ``None``.
         """
-        feature_manager = adapter.currentModel.FeatureManager
-        feature = feature_manager.FeatureRevolve2(
-            not params.both_directions,
-            True,
-            params.thin_feature,
-            False,
-            params.reverse_direction,
-            False,
-            adapter.constants["swEndCondBlind"],
-            adapter.constants["swEndCondBlind"],
-            params.angle * 3.14159 / 180.0,
-            (params.angle * 3.14159 / 180.0) if params.both_directions else 0.0,
-            False,
-            False,
-            0.0,
-            0.0,
-            0,
-            (params.thin_thickness or 0.0) / 1000.0,
-            0.0,
-            params.merge_result,
-            False,
-            True,
+        # IModelDoc2.FeatureRevolve2 (5 params, SW2010+):
+        # Angle(rad), ReverseDir(bool), Angle2(rad), RevType(int), Options(int)
+        # RevType: 0=blind, 2=mid-plane, 3=through-all
+        feature = adapter._attempt(
+            lambda: adapter.currentModel.FeatureRevolve2(
+                params.angle * 3.14159 / 180.0,
+                params.reverse_direction,
+                0.0,
+                0,
+                0,
+            ),
+            default=None,
         )
 
         if not feature:

@@ -703,6 +703,16 @@ def _add_fillet_impl(
         if feature is None:
             raise Exception("Failed to create fillet")
 
+        # IModelDoc2.FeatureFillet3 returns int (not IFeature) — treat as success
+        if isinstance(feature, int):
+            return SolidWorksFeature(
+                name=f"Fillet-R{radius}",
+                type="Fillet",
+                id=f"fillet_{radius}",
+                parameters={"radius": radius, "edges": edge_names},
+                properties={"created": datetime.now().isoformat()},
+            )
+
         return SolidWorksFeature(
             name=feature.Name,
             type="Fillet",
